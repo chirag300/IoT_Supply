@@ -11,8 +11,8 @@ CLUSTER_DIST = 3
 
 # Data set 1: Random
 def gen_random_locations(num_locations: int):
-    points = np.random.uniform(MIN_DIST, MAX_DIST, size=(num_locations, 2))
-    points = np.append(points, [[0, 0]], axis=0)
+    points = np.array([[0, 0]])
+    points = np.append(points, np.random.uniform(MIN_DIST, MAX_DIST, size=(num_locations, 2)), axis=0)
     
     return points
 
