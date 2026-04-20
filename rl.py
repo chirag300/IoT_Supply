@@ -13,8 +13,8 @@ from data.gen_training_data import get_produce, get_stop_pairs
 # =========================== ENVIRONMENT CLASS =========================== #
 class DeliveryEnv:
     def __init__(self, stops_data, produce_data, max_steps=50):
-        self.stops_data = stops_data
-        self.produce_data = produce_data
+        self.stops_data = stops_data  # TODO: This is a static list that does not get updated, so we are not training anything useful. It is like giving the truck 200 different ways to go from A to B, of course it always just picks the shortest one.
+        self.produce_data = produce_data  # TODO: This is not used anywhere.
         self.max_steps = max_steps
         self.all_stops = sorted(set(stops_data['stop_i'].unique()) | set(stops_data['stop_j'].unique()))
         self.n_stops = len(self.all_stops)
@@ -68,7 +68,7 @@ class DeliveryEnv:
         ]
 
     def get_nearest_stops(self):
-        """Fetch all unvisited stops sorted by distance."""
+        """Fetch all unvisited neighbouring stops."""
         unvisited_routes = self.stops_data[
             ((self.stops_data['stop_i'] == self.current_location) & (~self.stops_data['stop_j'].isin(self.visited_stops))) |
             ((self.stops_data['stop_j'] == self.current_location) & (~self.stops_data['stop_i'].isin(self.visited_stops)))
@@ -82,110 +82,109 @@ class DeliveryEnv:
             unvisited_routes['stop_j'],
             unvisited_routes['stop_i']
         )
-        return unvisited_routes[['next_stop', 'travel_distance_km', 'travel_time_seconds', 'delay_time_seconds']].values.tolist()
+        return unvisited_routes[['next_stop', 'travel_distance_km', 'travel_time_hours', 'delay_time_hours']].values.tolist()
+
     def get_temperature_adjustment(self):
-      """
-      Compute the necessary temperature adjustment to maintain ideal storage conditions.
-      """
+        """
+        Compute the necessary temperature adjustment to maintain ideal storage conditions.
+        """
 
-      # Define ideal temperatures
-      ideal_temperatures = {'Apples': 2, 'Bananas': 5, 'Tomatoes': 8, 'xyz': 7}
+        # Define ideal temperatures
+        ideal_temperatures = {'Apples': 2, 'Bananas': 5, 'Tomatoes': 8, 'xyz': 7}
 
-      # Assume the truck currently has a storage temperature (simulated sensor data)
-      current_temperatures = {
-          'Apples': np.random.uniform(0, 4),  # Simulated sensor reading
-          'Bananas': np.random.uniform(12, 14),
-          'Tomatoes': np.random.uniform(7, 10),
-          'xyz': np.random.uniform(0, 10)
-      }
+        # Assume the truck currently has a storage temperature (simulated sensor data)
+        current_temperatures = {
+            'Apples': np.random.uniform(0, 4),  # Simulated sensor reading
+            'Bananas': np.random.uniform(12, 14),
+            'Tomatoes': np.random.uniform(7, 10),
+            'xyz': np.random.uniform(0, 10)
+        }
 
-      # Compute temperature deviation for each produce type
-      temp_deviation = {p:ideal_temperatures[p] -current_temperatures[p] for p in ideal_temperatures}
+        # Compute temperature deviation for each produce type
+        temp_deviation = {p : ideal_temperatures[p] - current_temperatures[p] for p in ideal_temperatures}
 
-      # Compute the average temperature adjustment needed
-      avg_temp_adjustment = sum(temp_deviation.values()) / len(temp_deviation)
+        # Compute the average temperature adjustment needed
+        avg_temp_adjustment = sum(temp_deviation.values()) / len(temp_deviation)
 
-      return avg_temp_adjustment  # Negative means decrease temp, positive means increase temp
+        return avg_temp_adjustment  # Negative means decrease temp, positive means increase temp
 
 
     def select_stop(self, nearest_stops):
-      """Select the next stop based on weighted scoring with priority to distance and delay."""
-      best_stop = None
-      best_score = float('inf')  # Smaller scores are better for prioritizing distance and delay
+        """Select the next stop based on weighted scoring with priority to distance and delay."""
+        best_stop = None
+        best_score = float('inf')  # Smaller scores are better for prioritizing distance and delay
 
-      for stop in nearest_stops:
-          next_stop, travel_distance_km, travel_time, delay_time = stop
-          delivery = self.delivery_plan.get(next_stop, {})
-          delivery_score = sum(min(self.current_inventory[p], v) for p, v in delivery.items())
-          avg_shelf_life = np.mean([self.shelf_life_remaining[p] for p in delivery if delivery[p] > 0])
+        for stop in nearest_stops:
+            next_stop, travel_distance_km, travel_time, delay_time = stop
+            delivery = self.delivery_plan.get(next_stop, {})
+            delivery_score = sum(min(self.current_inventory[p], v) for p, v in delivery.items())
+            avg_shelf_life = np.mean([self.shelf_life_remaining[p] for p in delivery if delivery[p] > 0])
 
+            # Weighted scoring: prioritize distance, delay, then delivery quantity, then shelf life
+            delay_penalty = 50 * (delay_time > 5) + 15 * delay_time  # Large penalty for delays > 5 hours
+            score = (10 * travel_distance_km) + delay_penalty - (2 * delivery_score) - avg_shelf_life
 
-          # Weighted scoring: prioritize distance, delay, then delivery quantity, then shelf life
-          delay_penalty = 50 * (delay_time > 5) + 15 * delay_time  # Large penalty for delays > 5 hours
-          score = (10 * travel_distance_km) + delay_penalty - (2 * delivery_score) - avg_shelf_life
+            # print(f"Evaluating stop {next_stop}: Distance = {travel_distance_km}, Delay = {delay_time}, "
+            #     f"Delivery Score = {delivery_score}, Shelf Life = {avg_shelf_life}, Score = {score}")
 
-          # print(f"Evaluating stop {next_stop}: Distance = {travel_distance_km}, Delay = {delay_time}, "
-          #     f"Delivery Score = {delivery_score}, Shelf Life = {avg_shelf_life}, Score = {score}")
+            if score < best_score:  # Lower score is better
+                best_score = score
+                best_stop = stop
 
-
-          if score < best_score:  # Lower score is better
-              best_score = score
-              best_stop = stop
-
-      return best_stop
+        return best_stop
 
 
     def step(self, action):
-      nearest_stops = self.get_nearest_stops()
-      if not nearest_stops:
-          if self.current_location != self.warehouse_location:
-              self.return_to_warehouse()
-          return self.get_state(), 0, True
+        nearest_stops = self.get_nearest_stops()
+        if not nearest_stops:
+            if self.current_location != self.warehouse_location:
+                self.return_to_warehouse()
+            return self.get_state(), 0, True
 
-      # Select best stop based only on shelf life (unchanged)
-      best_stop = self.select_stop(nearest_stops)
-      if not best_stop:
-          if self.current_location != self.warehouse_location:
-              self.return_to_warehouse()
-          return self.get_state(), 0, True
+        # Select best stop based only on shelf life (unchanged)
+        best_stop = self.select_stop(nearest_stops)
+        if not best_stop:
+            if self.current_location != self.warehouse_location:
+                self.return_to_warehouse()
+            return self.get_state(), 0, True
 
-      next_stop, _, travel_time, delay_time = best_stop
+        next_stop, _, travel_time, delay_time = best_stop
 
-      # Update environment state
-      total_time = travel_time + delay_time
-      self.elapsed_time += total_time
-      self.steps += 1
-      self.update_shelf_life()
+        # Update environment state
+        total_time = travel_time + delay_time
+        self.elapsed_time += total_time
+        self.steps += 1
+        self.update_shelf_life()
 
-      # Perform deliveries
-      delivery = self.delivery_plan.get(next_stop, {})
-      delivered_count = sum(self.update_inventory(p, amt) for p, amt in delivery.items())
+        # Perform deliveries
+        delivery = self.delivery_plan.get(next_stop, {})
+        delivered_count = sum(self.update_inventory(p, amt) for p, amt in delivery.items())
 
-      # Compute the temperature adjustment required
-      temp_adjustment = self.get_temperature_adjustment()
+        # Compute the temperature adjustment required
+        temp_adjustment = self.get_temperature_adjustment()
 
-      # Print temperature adjustment information
-      if temp_adjustment < 0:
-          print(f"At Stop {next_stop}: Truck should DECREASE temperature by {abs(temp_adjustment):.2f}°C")
-      elif temp_adjustment > 0:
-          print(f"At Stop {next_stop}: Truck should INCREASE temperature by {temp_adjustment:.2f}°C")
-      else:
-          print(f"At Stop {next_stop}: No temperature adjustment needed.")
+        # Print temperature adjustment information
+        if temp_adjustment < 0:
+            print(f"At Stop {next_stop}: Truck should DECREASE temperature by {abs(temp_adjustment):.2f}°C")
+        elif temp_adjustment > 0:
+            print(f"At Stop {next_stop}: Truck should INCREASE temperature by {temp_adjustment:.2f}°C")
+        else:
+            print(f"At Stop {next_stop}: No temperature adjustment needed.")
 
-      # Reward calculation (unchanged)
-      reward = self.calculate_reward(total_time, delivered_count)
+        # Reward calculation (unchanged)
+        reward = self.calculate_reward(total_time, delivered_count)
 
-      # Move to next stop
-      self.current_location = next_stop
-      self.visited_stops.add(next_stop)
-      self.log_route(next_stop, delivery, reward)
+        # Move to next stop
+        self.current_location = next_stop
+        self.visited_stops.add(next_stop)
+        self.log_route(next_stop, delivery, reward)
 
-      # Check if all stops are visited
-      if len(self.visited_stops) == self.n_stops:
-          self.return_to_warehouse()
+        # Check if all stops are visited
+        if len(self.visited_stops) == self.n_stops:
+            self.return_to_warehouse()
 
-      done = self.check_done()
-      return self.get_state(), reward, done
+        done = self.check_done()
+        return self.get_state(), reward, done
 
 
     def return_to_warehouse(self):
@@ -196,7 +195,7 @@ class DeliveryEnv:
                 | (self.stops_data['stop_j'] == self.current_location) & (self.stops_data['stop_i'] == self.warehouse_location)
             ]
             if not travel_info.empty:
-                travel_time = travel_info.iloc[0]['travel_time_seconds']
+                travel_time = travel_info.iloc[0]['travel_time_hours']
                 self.elapsed_time += travel_time
                 self.log_route(self.warehouse_location, {}, 0)  # No penalty for returning to warehouse
             self.current_location = self.warehouse_location
@@ -362,6 +361,19 @@ def train_dqn_agent(stop_data, produce_data, episodes=300, batch_size=64, save_p
     # Save the trained model
     save_model(agent, save_path)
 
+    # ================= PRINT BEST ROUTE OF TRAINING DATASET ================= #
+    print("\n--- Best Route Found In Training Dataset ---")
+    train_env.reset()
+    done = False
+    while not done:
+        action = agent.act(train_env.get_state())
+        _, _, done = train_env.step(action)
+
+    # Display route log
+    for log in train_env.route_log:
+        print(log)
+
+
 def run_model(test_env: DeliveryEnv, save_path: str = "dqn_agent.pth"):
     # Load previously trained RL agent and run it to see what path it would choose
     agent = DQNAgent(len(test_env.get_state()), test_env.action_space_size)
@@ -387,6 +399,9 @@ if __name__ == "__main__":
     # Train the agent
     if args.train:
         train_dqn_agent(get_stop_pairs("data"), get_produce(), episodes=100)
+
+    # stops_data = get_stop_pairs("data")
+    # print(sorted(set(stops_data['stop_j'].unique())))
 
     # Use a real test dataset that's different than the one used in training (generate new variations from same base map)
     run_model(DeliveryEnv(stops_data=get_stop_pairs("data"), produce_data=get_produce(), max_steps=50))
