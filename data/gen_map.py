@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 
 # Generate a map of locations in 2D Euclidean plane to represent stores/customers (distances in km)
@@ -9,12 +10,8 @@ MAX_DIST = 30
 CLUSTER_SIZE = 3
 CLUSTER_DIST = 3
 
-# Data set 1: Random
-def gen_random_locations(num_locations: int):
-    points = np.array([[0, 0]])
-    points = np.append(points, np.random.uniform(MIN_DIST, MAX_DIST, size=(num_locations, 2)), axis=0)
-    
-    return points
+RANDOM_LOCATIONS = "random_locations.npz"
+CLUSTERED_LOCATIONS = "clustered_locations.npz"
 
 def get_dist_matrix(points: np.ndarray):
     # Using broadcasting: (N, 1, 2) - (1, N, 2) results in pairwise differences
@@ -24,12 +21,13 @@ def get_dist_matrix(points: np.ndarray):
 
     return dist_matrix
 
-# Currently just generates 1 scenario per case
-np.savez("random_locations.npz",
-    n10 = get_dist_matrix(gen_random_locations(10)),
-    n20 = get_dist_matrix(gen_random_locations(20)),
-    n30 = get_dist_matrix(gen_random_locations(30))
-)
+# Data set 1: Random
+def gen_random_locations(num_locations: int):
+    print("Generating random locations")
+    points = np.array([[0, 0]])
+    points = np.append(points, np.random.uniform(MIN_DIST, MAX_DIST, size=(num_locations, 2)), axis=0)
+    
+    return points
 
 # Data set 2: local clusters
 def gen_clustered_locations(locations_per_cluster: list[int]):
@@ -70,9 +68,25 @@ def gen_clustered_locations(locations_per_cluster: list[int]):
 
     return all_points
 
-# Currently just generates 1 scenario per case
-np.savez("clustered_locations.npz",
-    n10 = get_dist_matrix(gen_clustered_locations([2,3,5])),
-    n20 = get_dist_matrix(gen_clustered_locations([5,7,8])),
-    n30 = get_dist_matrix(gen_clustered_locations([3,6,8,13]))
-)
+def get_map(save_path: str = "data", clustered: bool = False, n: int = 10):
+    return np.load(save_path + "/" + (CLUSTERED_LOCATIONS if clustered else RANDOM_LOCATIONS))[f"n{n}"]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--save-path', default="data", help="Path to save map data to")
+    args = parser.parse_args()
+
+    # Currently just generates 1 scenario per case
+    np.savez(args.save_path + "/" + RANDOM_LOCATIONS,
+        n10 = get_dist_matrix(gen_random_locations(10)),
+        n20 = get_dist_matrix(gen_random_locations(20)),
+        n30 = get_dist_matrix(gen_random_locations(30))
+    )
+
+    # Currently just generates 1 scenario per case
+    np.savez(args.save_path + "/" + CLUSTERED_LOCATIONS,
+        n10 = get_dist_matrix(gen_clustered_locations([2,3,5])),
+        n20 = get_dist_matrix(gen_clustered_locations([5,7,8])),
+        n30 = get_dist_matrix(gen_clustered_locations([3,6,8,13]))
+    )
