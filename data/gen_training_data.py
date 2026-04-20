@@ -12,9 +12,9 @@ def get_stop_pairs(save_path: str = "data", clustered: bool = False, n: int = 10
     # Base travel distances between specific stop pairs. Symmetric matrix
     base_travel_distance = get_map(save_path, clustered, n)
 
-    # Calculate base travel times in seconds
-    base_travel_time = base_travel_distance / 30*3600  # Base travel time, assuming average speed of 30 km/h
-    base_delay_time = 0  # Base delay time at stops in seconds
+    # Calculate base travel times in hours
+    base_travel_time = base_travel_distance / 30  # Base travel time, assuming average speed of 30 km/h
+    base_delay_time = 0  # Base delay time at stops in hours
 
     # Delay reasons list
     delay_reasons = ["Road Closed", "Traffic", "Accident", "Weather", "No Delay"]
@@ -49,7 +49,7 @@ def get_stop_pairs(save_path: str = "data", clustered: bool = False, n: int = 10
 
         # Stop delay
         if np.random.rand() < 0.1:  # Add random variation in 10% of cases
-            delay = base_delay_time + np.random.uniform(360, 720)  # 0.1 to 0.2 hours of delay
+            delay = base_delay_time + np.random.uniform(0.1, 0.2)  # 0.1 to 0.2 hours of delay
             event = np.random.choice(delay_reasons[1:-1])  # Select a reason excluding "No Delay" and "Road Closed"
         else:
             delay = base_delay_time
@@ -68,16 +68,16 @@ def get_stop_pairs(save_path: str = "data", clustered: bool = False, n: int = 10
         'stop_i': stops_i,
         'stop_j': stops_j,
         'travel_distance_km': travel_distance_pattern,
-        'travel_time_seconds': travel_time_pattern,
-        'delay_time_seconds': delay_time_pattern,
+        'travel_time_hours': travel_time_pattern,
+        'delay_time_hours': delay_time_pattern,
         'delay_event': delay_events
     })
 
     # Modify the stop_pairs_pattern DataFrame to include a large delay for route 5 -> 4
-    stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 5) & (stop_pairs_pattern['stop_j'] == 4), 'delay_time_seconds'] = 1 * 3600  # 1 hour delay
+    stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 5) & (stop_pairs_pattern['stop_j'] == 4), 'delay_time_hours'] = 1  # 1 hour delay
     stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 5) & (stop_pairs_pattern['stop_j'] == 4), 'delay_event'] = 'Road Block'
     # Modify the symmetrical route 4 -> 5 as well
-    stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 4) & (stop_pairs_pattern['stop_j'] == 5), 'delay_time_seconds'] = 1 * 3600  # 1 hour delay
+    stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 4) & (stop_pairs_pattern['stop_j'] == 5), 'delay_time_hours'] = 1  # 1 hour delay
     stop_pairs_pattern.loc[(stop_pairs_pattern['stop_i'] == 4) & (stop_pairs_pattern['stop_j'] == 5), 'delay_event'] = 'Road Block'
 
     return stop_pairs_pattern

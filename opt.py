@@ -18,15 +18,17 @@ if __name__ == "__main__":
     parser.add_argument('-n', default=10, type=int, help="number of delivery points (make sure to generate this map first before trying to use)")
     args = parser.parse_args()
 
+    N = args.n + 1
+
     # Base travel distances in km between specific stop pairs. Symmetric matrix
     base_travel_distance = get_map(args.map_data_path, args.cluster, args.n)
 
     # Calculate base travel times in hours
     base_travel_time = base_travel_distance / 30  # Base travel time, assuming average speed of 30 km/h
-    base_delay_time = 0  # Base delay time at stops in seconds
+    base_delay_time = 0  # Base delay time at stops in hours
 
     travel_times = base_travel_time * np.random.uniform(0.5, 1.5, size=base_travel_time.shape)  # +- 50% travel time
-    delays = np.where(np.random.random(size=N) < 0.1, np.random.uniform(base_delay_time + 0.1, base_delay_time + 0.2, size=N), base_delay_time)  # 0.1 to 0.2 hours of delay in 10% of the cases
+    delays = np.where(np.random.random(size=N) < 0.1, base_delay_time + np.random.uniform(0.1, 0.2, size=N), base_delay_time)  # 0.1 to 0.2 hours of delay in 10% of the cases
 
     print(travel_times)
     print(delays)
