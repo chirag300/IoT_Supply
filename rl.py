@@ -8,50 +8,46 @@ import torch.optim as optim
 from collections import deque
 import random
 
-from data.gen_training_data import get_produce, get_stop_pairs
+from data.gen_map import get_map
+from data.gen_training_data import get_delivery_plan, get_inventory, get_map, get_produce, get_shelf_life, get_stop_pairs
 
 # =========================== ENVIRONMENT CLASS =========================== #
 class DeliveryEnv:
-    def __init__(self, stops_data, produce_data, max_steps=50):
+    def __init__(
+            self,
+            stops_data: pd.DataFrame,
+            produce_data: pd.DataFrame,
+            dist_matrix,
+            delivery_plan,
+            initial_inventory,
+            initial_shelf_life,
+            max_steps=50
+        ):
         self.stops_data = stops_data  # TODO: This is a static list that does not get updated, so we are not training anything useful. It is like giving the truck 200 different ways to go from A to B, of course it always just picks the shortest one.
         self.produce_data = produce_data  # TODO: This is not used anywhere.
+        self.dist_matrix = dist_matrix  # TODO: Can use this to dynamically generate the disturbances. Currently not used anywhere
         self.max_steps = max_steps
         self.all_stops = sorted(set(stops_data['stop_i'].unique()) | set(stops_data['stop_j'].unique()))
         self.n_stops = len(self.all_stops)
+        # self.n_stops = self.map.shape[0]
+        # self.all_stops = list(range(self.n_stops))
         self.action_space_size = self.n_stops
-        self.delivery_plan = self.create_delivery_plan()  # New delivery plan
+        self.delivery_plan = delivery_plan
+        self.initial_inventory = initial_inventory
+        self.initial_shelf_life = initial_shelf_life
         self.reset()
 
     def reset(self):
         self.warehouse_location = 0
         self.current_location = self.warehouse_location
-        self.current_inventory = {'Apples': 76, 'Bananas': 61, 'Tomatoes': 58, 'xyz': 53}
+        self.current_inventory = self.initial_inventory
         self.elapsed_time = 0
-        self.shelf_life_remaining = self.initialize_shelf_life()
+        self.shelf_life_remaining = self.initial_shelf_life
         self.steps = 0
         self.visited_stops = {self.warehouse_location}
         self.route_log = []
         self.log_initial_stop()
         return self.get_state()
-
-    def initialize_shelf_life(self):
-        base_shelf_life = {'Apples': 720, 'Bananas': 168, 'Tomatoes': 336, 'xyz': 200}
-        return base_shelf_life.copy()
-
-    def create_delivery_plan(self):
-        plan = {
-            1: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 5, 'xyz': 0},
-            2: {'Apples': 5, 'Bananas': 10, 'Tomatoes': 5, 'xyz': 5},
-            3: {'Apples': 5, 'Bananas': 5, 'Tomatoes': 10, 'xyz': 5},
-            4: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 0, 'xyz': 10},
-            5: {'Apples': 7, 'Bananas': 7, 'Tomatoes': 6, 'xyz': 5},
-            6: {'Apples': 8, 'Bananas': 5, 'Tomatoes': 7, 'xyz': 5},
-            7: {'Apples': 6, 'Bananas': 8, 'Tomatoes': 6, 'xyz': 5},
-            8: {'Apples': 5, 'Bananas': 5, 'Tomatoes': 8, 'xyz': 7},
-            9: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 5, 'xyz': 5},
-            10: {'Apples': 10, 'Bananas': 6, 'Tomatoes': 6, 'xyz': 6},
-        }
-        return plan
 
     def get_state(self):
         return [
@@ -93,6 +89,7 @@ class DeliveryEnv:
         ideal_temperatures = {'Apples': 2, 'Bananas': 5, 'Tomatoes': 8, 'xyz': 7}
 
         # Assume the truck currently has a storage temperature (simulated sensor data)
+        # TODO: This should be part of the environment's state, 
         current_temperatures = {
             'Apples': np.random.uniform(0, 4),  # Simulated sensor reading
             'Bananas': np.random.uniform(12, 14),
@@ -133,7 +130,8 @@ class DeliveryEnv:
 
         return best_stop
 
-
+    # TODO: Fix this, we are not using the agent's decision `action`. We should be going to whichever destination the agent chose to go.
+    # We should not be greedily picking the nearest stop.
     def step(self, action):
         nearest_stops = self.get_nearest_stops()
         if not nearest_stops:
@@ -215,6 +213,7 @@ class DeliveryEnv:
 
     def calculate_reward(self, total_time, delivered_produce_count):
         """Calculate reward with separate penalties for travel and delivery rewards."""
+        # TODO: There is a possibility that the agent used random action, and goes to an illegal stop. That should be punished with -infinity and instant termination
         delivery_reward = delivered_produce_count * 10  # Reward for each item delivered
         travel_penalty = total_time * 0.1  # Penalty proportional to travel and delay time
         return delivery_reward - travel_penalty
@@ -229,6 +228,7 @@ class DeliveryEnv:
             or all(v <= 0 for v in self.shelf_life_remaining.values())
         )
 
+    # TODO: This is not used anywhere
     def handle_no_stops(self):
         if self.current_location != self.warehouse_location:
             self.current_location = self.warehouse_location
@@ -243,7 +243,7 @@ class DeliveryEnv:
 
 # =========================== DQN AGENT =========================== #
 class DQNAgent:
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, model: nn.Module = None):
         self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=2000)
@@ -256,8 +256,10 @@ class DQNAgent:
 
         self.model = self.build_model().to(self.device)
         self.target_model = self.build_model().to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        if model:
+            self.model.load_state_dict(model.state_dict())
         self.update_target_model()
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
     # Multi-layer perceptron
     def build_model(self):
@@ -305,12 +307,16 @@ class DQNAgent:
 
 
 # =========================== TRAINING LOOP =========================== #
-def train_dqn(train_env: DeliveryEnv, episodes=500, batch_size=64):
-    agent = DQNAgent(len(train_env.get_state()), train_env.action_space_size)
+def train_dqn(train_env: DeliveryEnv, initial_model: nn.Module = None, episodes=500, target_update=10, batch_size=64):
+    agent = DQNAgent(len(train_env.get_state()), train_env.action_space_size, initial_model)
     rewards = []  # Track rewards for visualization
-    elapsed_times = []  # Track elapsed timesa
+    elapsed_times = []  # Track elapsed times
 
     for episode in range(episodes):
+        # Update the target model every few episodes
+        if episode % target_update == 0:
+            agent.update_target_model()
+
         state = train_env.reset()
         total_reward, done = 0, False
         elapsed_time = 0
@@ -333,12 +339,12 @@ def train_dqn(train_env: DeliveryEnv, episodes=500, batch_size=64):
     return agent, rewards, elapsed_times
 
 
-def save_model(agent, file_path="dqn_agent.pth"):
+def save_model(agent: DQNAgent, file_path: str = "dqn_agent.pth"):
     """Save the trained model to a file."""
     torch.save(agent.model.state_dict(), file_path)
     print(f"Model saved to {file_path}")
 
-def load_model(agent, file_path="dqn_agent.pth"):
+def load_model(agent: DQNAgent, file_path: str = "dqn_agent.pth"):
     """Load a trained model from a file."""
     if os.path.exists(file_path):
         agent.model.load_state_dict(torch.load(file_path))
@@ -347,13 +353,16 @@ def load_model(agent, file_path="dqn_agent.pth"):
     else:
         print(f"Model file {file_path} does not exist.")
 
-def train_dqn_agent(stop_data, produce_data, episodes=300, batch_size=64, save_path="dqn_agent.pth"):
+def train_dqn_agent(train_env: DeliveryEnv, episodes=500, target_update=10, batch_size=64, save_path="dqn_agent.pth"):
+    # TODO: Should be trained on the same map, but also with different delays/uncertainties
+    # Do this by placing the below in a loop, while keeping the model. So, agent can learn how to navigate many different possible delays
+
     # Initialize environment
-    train_env = DeliveryEnv(stops_data=stop_data, produce_data=produce_data, max_steps=50)
+    train_env.reset()
 
     # Train DQN agent
     print("Starting DQN training...\n")
-    agent, rewards, elapsed_times = train_dqn(train_env, episodes)
+    agent, rewards, elapsed_times = train_dqn(train_env, None, episodes, target_update, batch_size)
 
     # Update target model after training
     agent.update_target_model()
@@ -372,7 +381,7 @@ def train_dqn_agent(stop_data, produce_data, episodes=300, batch_size=64, save_p
     # Display route log
     for log in train_env.route_log:
         print(log)
-
+    print(f"Total time of route: {train_env.elapsed_time} h")
 
 def run_model(test_env: DeliveryEnv, save_path: str = "dqn_agent.pth"):
     # Load previously trained RL agent and run it to see what path it would choose
@@ -380,6 +389,7 @@ def run_model(test_env: DeliveryEnv, save_path: str = "dqn_agent.pth"):
     load_model(agent, save_path)
 
     print("\n--- Best Route Found ---")
+    test_env.reset()
     done = False
     while not done:
         action = agent.act(test_env.get_state())
@@ -388,6 +398,7 @@ def run_model(test_env: DeliveryEnv, save_path: str = "dqn_agent.pth"):
     # Display route log
     for log in test_env.route_log:
         print(log)
+    print(f"Total time of route: {test_env.elapsed_time} h")
 
 
 if __name__ == "__main__":
@@ -397,11 +408,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Train the agent
+    train_env = DeliveryEnv(get_stop_pairs("data"), get_produce(), get_map(), get_delivery_plan(), get_inventory(), get_shelf_life())
     if args.train:
-        train_dqn_agent(get_stop_pairs("data"), get_produce(), episodes=100)
+        train_dqn_agent(train_env, episodes=100)
 
-    # stops_data = get_stop_pairs("data")
-    # print(sorted(set(stops_data['stop_j'].unique())))
-
-    # Use a real test dataset that's different than the one used in training (generate new variations from same base map)
-    run_model(DeliveryEnv(stops_data=get_stop_pairs("data"), produce_data=get_produce(), max_steps=50))
+    # Use a real test dataset that's different than the one used in training (generates new variations from same base map)
+    test_env = DeliveryEnv(get_stop_pairs("data"), get_produce(), get_map(), get_delivery_plan(), get_inventory(), get_shelf_life())
+    run_model(test_env)

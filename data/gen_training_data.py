@@ -8,6 +8,7 @@ TRAIN_DATASET_LEN = 2000  # Number of dataset entries
 RANDOM_LOCATIONS = "random_locations.npz"
 CLUSTERED_LOCATIONS = "clustered_locations.npz"
 
+
 def get_stop_pairs(save_path: str = "data", clustered: bool = False, n: int = 10):
     # Base travel distances between specific stop pairs. Symmetric matrix
     base_travel_distance = get_map(save_path, clustered, n)
@@ -82,7 +83,6 @@ def get_stop_pairs(save_path: str = "data", clustered: bool = False, n: int = 10
 
     return stop_pairs_pattern
 
-
 def get_produce():
     # Define the types of produce and their typical characteristics
     produce_types = ['Apples', 'Bananas', 'Tomatoes', 'xyz']
@@ -134,3 +134,23 @@ def get_produce():
     })
 
     return produce_data
+
+def get_delivery_plan():
+    return {
+        1: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 5, 'xyz': 0},
+        2: {'Apples': 5, 'Bananas': 10, 'Tomatoes': 5, 'xyz': 5},
+        3: {'Apples': 5, 'Bananas': 5, 'Tomatoes': 10, 'xyz': 5},
+        4: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 0, 'xyz': 10},
+        5: {'Apples': 7, 'Bananas': 7, 'Tomatoes': 6, 'xyz': 5},
+        6: {'Apples': 8, 'Bananas': 5, 'Tomatoes': 7, 'xyz': 5},
+        7: {'Apples': 6, 'Bananas': 8, 'Tomatoes': 6, 'xyz': 5},
+        8: {'Apples': 5, 'Bananas': 5, 'Tomatoes': 8, 'xyz': 7},
+        9: {'Apples': 10, 'Bananas': 5, 'Tomatoes': 5, 'xyz': 5},
+        10: {'Apples': 10, 'Bananas': 6, 'Tomatoes': 6, 'xyz': 6},
+    }
+
+def get_inventory():
+    return {'Apples': 76, 'Bananas': 61, 'Tomatoes': 58, 'xyz': 53}
+
+def get_shelf_life():
+    return {'Apples': 720, 'Bananas': 168, 'Tomatoes': 336, 'xyz': 200}
