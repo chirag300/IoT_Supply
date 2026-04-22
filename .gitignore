@@ -1,0 +1,7 @@
+# Virtual env
+/.venv
+__pycache__/
+
+# Data files
+*.npz
+*.pth
