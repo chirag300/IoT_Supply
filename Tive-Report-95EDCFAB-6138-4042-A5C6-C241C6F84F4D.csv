@@ -1,0 +1,4 @@
+﻿Tive report. Generated on 8/17/2024 12:40:12 PM (GMT -07:00)
+Click here for header definitions. https://support.tive.com/hc/en/articles/14008997114003
+ShipmentName,DeviceName,Time,Timezone,Latitude,Longitude,LocationAddress,LocationOrigin,Temperature,ExternalTemperature,Humidity,Light,AccelerationG,AccelerationX,AccelerationY,AccelerationZ,Battery
+1D2DE102000870-1,1D2DE102000870,8/17/2024 12:40:15 PM,(GMT -07:00),,,,,,,,,,,,,88
