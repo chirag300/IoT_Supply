@@ -3,7 +3,7 @@ import gurobipy as gp
 from gurobipy import GRB
 import numpy as np
 
-from data.gen_map import get_map
+from data.gen_data import get_map
 
 # Parameters and Indices
 N = 11  # Number of Points (node 0 is warehouse, 10 stops)
