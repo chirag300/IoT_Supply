@@ -1,0 +1,8 @@
+gurobipy
+matplotlib
+numpy
+pandas
+
+--extra-index-url https://download.pytorch.org/whl/cu130
+torch
+torchvision
